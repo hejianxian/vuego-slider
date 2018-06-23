@@ -1,0 +1,11 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`Slider.vue matches snapshot 1`] = `
+<div class="v-slider">
+  <div class="v-slider__container">
+    <div class="v-slider__track"></div>
+    <div class="v-slider__track is-active" style="width: 0%;"></div>
+    <div class="v-slider__handle" style="left: 0%;"></div>
+  </div>
+</div>
+`;
