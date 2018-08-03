@@ -1,7 +1,7 @@
 import VuegoSlider from './components/Slider.vue';
 
 const install = (Vue) => {
-  Vue.component(VuegoSlider.name, VuegoSlider);
+  Vue.component('vuego-slider', VuegoSlider);
 };
 
 if (typeof window !== 'undefined' && window.Vue) {

@@ -1,20 +1,29 @@
 <template>
-  <div class="v-slider" :class="[isDragging, isDisabled]" @click="handleClicked" ref="slider">
+  <div class="v-slider" :class="[isDragging, isDisable, isReadonly, typeClasses]" @click="onClick" ref="slider">
     <div class="v-slider__container">
       <div class="v-slider__track"></div>
-      <div class="v-slider__mark" v-for="mark in marks" :key="mark.index" :style="{left: mark.left}"></div>
+      <template v-if="showMark">
+        <div class="v-slider__mark" v-for="mark in marks" :key="mark.index" :style="{left: mark.left}"></div>
+      </template>
       <div class="v-slider__track is-active" :style="[trackActiveWidth]"></div>
-      <div class="v-slider__handle" :style="[handlePositionLeft]">
+      <VuegoPan class="v-slider__handle"
+        tabindex="0"
+        :style="[handlePosition]"
+        :start="panStart"
+        :move="panMove"
+        :end="panEnd"
+        @keydown.native="onKeyDown"
+        @keyup.native="onKeyUp">
         <div class="v-slider__tooltips" v-if="showTooltip">
           <div>{{tooltipContent}}</div>
         </div>
-      </div>
+      </VuegoPan>
     </div>
   </div>
 </template>
 
 <script>
-  import Hammer from 'hammerjs';
+  import VuegoPan from './Pan.vue';
 
   export default {
     name: 'vuego-slider',
@@ -31,15 +40,23 @@
         type: Number,
         default: 0,
       },
-      showMark: {
-        type: Boolean,
-        default: true,
-      },
       step: {
+        type: Number,
+        default: 1,
+      },
+      accuracy: {
         type: Number,
         default: 0,
       },
-      disabled: {
+      showMark: {
+        type: Boolean,
+        default: false,
+      },
+      disable: {
+        type: Boolean,
+        default: false,
+      },
+      readonly: {
         type: Boolean,
         default: false,
       },
@@ -51,49 +68,66 @@
         type: [String, Function],
         default: '{value}',
       },
+      type: {
+        type: String,
+        default: 'base',
+      },
     },
     data() {
       return {
+        val: this.value,
         handleWidth: 22,
         sliderMaxWidth: 0,
         sliderOffsetLeft: 0,
         positionLeft: 0,
         marks: [],
+        currentMark: 0,
         markWidth: 0,
         dragging: false,
+        currentPercentage: (this.value - this.min) / (this.max - this.min)
       };
     },
     computed: {
       model: {
         get() {
-          return this.value;
+          return this.val;
         },
-        set(value) {
-          this.$emit('input', value);
+        set(val) {
+          this.$emit('input', val);
         },
+       },
+      editable () {
+        return !this.disable && !this.readonly;
       },
+      isDragging() {
+        return { 'is-dragging': this.dragging };
+      },
+      isDisable() {
+        return { 'is-disable': this.disable };
+      },
+      isReadonly() {
+        return { 'is-readonly': this.readonly };
+      },
+      typeClasses() {
+        return this.type !== '' ? `is-${this.type}` : '';
+      },
+
       hasStep() {
         return this.step && this.step > 0;
       },
-      handlePositionLeft() {
-        let left = '0%';
-        if (this.hasStep && !this.dragging) return { left: this.positionLeft };
-        if (this.positionLeft < 0) return { left };
-        if (this.sliderMaxWidth > 0) {
-          if (this.positionLeft > this.sliderMaxWidth) {
-            left = '100%';
-          } else {
-            left = this.positionLeft / this.sliderMaxWidth * 100;
-            left = left > 50 ? Math.ceil(left) : Math.floor(left);
-            left += '%';
-          }
-        }
+
+      trackActiveWidth() {
+        const width = `${this.currentPercentage * 100}%`;
+        return { width };
+      },
+      handlePosition() {
+        const left = `${this.currentPercentage * 100}%`;
         return { left };
       },
-      trackActiveWidth() {
-        return { width: this.handlePositionLeft.left };
-      },
+
+      // tooltip
       showTooltip() {
+        if (!this.editable) return false;
         if (this.tooltip === 0) return false;
         if (this.tooltip === 1 && this.dragging) return true;
         if (this.tooltip === 2) return true;
@@ -101,68 +135,68 @@
       },
       tooltipContent() {
         if (typeof this.tooltipTpl === 'string') {
-          return this.tooltipTpl.replace('{value}', this.model);
+          return this.tooltipTpl.replace('{value}', this.value);
         }
         if (typeof this.tooltipTpl === 'function') {
-          return this.tooltipTpl(this.model);
+          return this.tooltipTpl(this.value);
         }
-      },
-
-      isDragging() {
-        return { 'is-dragging': this.dragging };
-      },
-      isDisabled() {
-        return { 'is-disabled': this.disabled };
       },
     },
     watch: {
-      handlePositionLeft(val) {
-        const { left } = val;
-        this.getModelValue(left);
-      },
-      hasStep(val) {
-        if (val) {
-          this.createMarkByStep();
+      value(value) {
+        if (this.dragging) {
+          return;
         }
-      },
-      showMark(val) {
-        if (val) {
-          this.createMarkByStep();
+        if (value < this.min) {
+          this.model = this.min;
+        } else if (value > this.max) {
+          this.model = this.max;
+        } else {
+          this.model = value;
         }
+        this.currentPercentage = (value - this.min) / (this.max - this.min);
+      },
+      min(value) {
+        if (this.model < value) {
+          this.model = value;
+          this.positionLeft = -1;
+          return;
+        }
+        this.$nextTick(this.validateProps);
+      },
+      max(value) {
+        if (this.model > value) {
+          this.model = value;
+          this.positionLeft = this.sliderMaxWidth + 1;
+          return;
+        }
+        this.$nextTick(this.validateProps);
+      },
+      step() {
+        this.$nextTick(this.validateProps);
+      },
+
+      percentage(val) {
+        this.getModelValue(val.left);
       },
     },
     methods: {
-      getModelValue(precentage) {
-        const precent = precentage.replace('%', '') / 100;
-        const len = (this.max - this.min) * precent;
-        this.model = Math.ceil(this.min + len);
-      },
-      checkRangeAndStep() {
-        if (process.env.NODE_ENV !== 'production') {
-          if (this.max <= this.min) {
-            throw new Error('[vuego-slider]: Max must be greater than min.');
-          }
-          if (this.hasStep) {
-            if ((this.max - this.min) % this.step !== 0) {
-              throw new Error('[vuego-slider]: Please enter a reasonable step value.');
-            }
-          }
-        }
-      },
-      createMarkByStep() {
-        if (this.hasStep && this.showMark) {
+      createMarks() {
+        if (this.hasStep) {
           const markCount = (this.max - this.min) / this.step;
           this.markWidth = this.sliderMaxWidth / markCount;
 
           for (let i = 0; i < markCount + 1; i += 1) {
             this.marks.push({
               index: i,
+              percentage: i / markCount,
               left: `${i / markCount * 100}%`,
             });
           }
         }
       },
-      initHandlePosition() {
+
+      __init() {
         if (this.model > this.max) {
           this.model = this.max;
           this.positionLeft = this.sliderMaxWidth + 1;
@@ -175,12 +209,14 @@
         }
 
         const percentage = (this.model - this.min) / (this.max - this.min);
-        this.updateHandlePosition({ pageX: this.sliderOffsetLeft + this.sliderMaxWidth * percentage });
+        this.currentPercentage = percentage;
       },
-      updateHandlePosition(e) {
-        const { pageX } = e;
-        let positionLeft = pageX - this.sliderOffsetLeft - this.handleWidth / 2;
 
+      getPercentage(positionLeft) {
+        if (positionLeft < 0) return 0;
+        if (positionLeft > this.sliderMaxWidth) return 1;
+
+        let percentage;
         if (this.hasStep && !this.dragging) {
           const mark = positionLeft / this.markWidth;
           let currentMark = Math.floor(mark);
@@ -192,44 +228,82 @@
           const marksLength = this.marks.length;
           if (currentMark > marksLength) currentMark = marksLength - 1;
           if (currentMark < 0) currentMark = 0;
-          positionLeft = this.marks[currentMark]['left'];
+          percentage = this.marks[currentMark]['percentage'];
+          this.currentMark = currentMark;
+        } else {
+          percentage = positionLeft / this.sliderMaxWidth;
         }
-        this.positionLeft = positionLeft;
-      },
-      handleClicked(e) {
-        if (this.disabled) return;
-
-        this.updateHandlePosition(e);
+        return percentage;
       },
 
-      bindTouchEvent() {
-        const handle = this.$refs.slider.querySelector('.v-slider__handle');
-        const hammer = new Hammer(handle);
-
-        hammer.get('pan').set({
-          direction: Hammer.DIRECTION_HORIZONTAL,
-          threshold: 1,
-        });
-
-        hammer.on('panstart', (e) => {
-          this.touchStart(e);
-        });
-        hammer.on('panmove', (e) => {
-          this.touchMove(e);
-        });
-        hammer.on('panend pancancel', (e) => {
-          this.touchEnd(e);
-        });
+      getModelValue(percentage) {
+        const len = (this.max - this.min) * percentage;
+        return parseFloat((this.min + len).toFixed(this.accuracy));
       },
-      touchStart(e) {
+
+      __update(e) {
+        if (!this.editable) return;
+
+        const { pageX } = e;
+        let positionLeft = pageX - this.sliderOffsetLeft - this.handleWidth / 2;
+
+        const percentage = this.getPercentage(positionLeft);
+        this.model = this.getModelValue(percentage);
+        this.currentPercentage = percentage;
+      },
+
+      onClick(e) {
+        this.__update(e);
+      },
+
+      // Touch evnets
+      panStart(e) {
         this.dragging = true;
       },
-      touchMove(e) {
-        this.handleClicked(e.srcEvent);
+      panMove(e) {
+        this.__update(e.srcEvent);
       },
-      touchEnd(e) {
+      panEnd(e) {
         this.dragging = false;
-        this.handleClicked(e.srcEvent);
+        this.__update(e.srcEvent);
+      },
+
+      // key events
+      onKeyDown(e) {
+        const keyCode = e.keyCode
+        if (!this.editable || ![37, 40, 39, 38].includes(keyCode)) {
+          return
+        }
+        e.preventDefault();
+        e.stopPropagation();
+
+        const offset = [37, 40].includes(keyCode) ? -1 : 1;
+        this.currentMark += offset;
+        if (this.currentMark < 0) this.currentMark = 0;
+        if (this.currentMark >= this.marks.length) this.currentMark = this.marks.length - 1;
+
+        const percentage = this.marks[this.currentMark]['percentage'];
+        this.model = this.getModelValue(percentage);
+        this.currentPercentage = percentage;
+      },
+      onKeyUp(e) {
+        const keyCode = e.keyCode
+        if (!this.editable || ![37, 40, 39, 38].includes(keyCode)) {
+          return
+        }
+      },
+
+      // Validate
+      validateProps() {
+        if (process.env.NODE_ENV !== 'production') {
+          if (this.max <= this.min) {
+            console.error('[vuego-slider]: Max must be greater than min.', this.$refs);
+          }
+          const res = (this.max - this.min) / this.step;
+          if (String(res).split('.').length > 1) {
+            console.error('[vuego-slider]: Please set a reasonable `step`.', this.$refs);
+          }
+        }
       },
     },
     mounted() {
@@ -237,22 +311,27 @@
       this.sliderOffsetLeft = $slider.offsetLeft;
       this.sliderMaxWidth = $slider.offsetWidth - this.handleWidth;
 
-      this.checkRangeAndStep();
-      this.createMarkByStep();
-      this.initHandlePosition();
-      this.bindTouchEvent();
+      this.validateProps();
+      this.createMarks();
+      this.__init();
+    },
+    components: {
+      VuegoPan,
     },
   };
 </script>
 
 <style lang="less" scoped>
 @handleSize: 22px;
+@defaultColor: #279AFC;
+@successColor: #42b983;
+@warningColor: #FB8A35;
+@errorColor: #F94768;
 
 .v-slider {
   width: 100%;
   height: 30px;
   user-select: none;
-  color: #f00;
   cursor: pointer;
   &__container {
     margin: 0 @handleSize / 2;
@@ -269,7 +348,7 @@
     background: #ddd;
     transition: all .3s ease;
     &.is-active {
-      background: #a98eff;
+      background: @defaultColor;
     }
   }
   &__handle {
@@ -282,11 +361,13 @@
     width: 22px;
     height: 22px;
     background: #fff;
+    user-select: none;
+    outline: none;
     box-shadow: 0 1px 8px rgba(0,0,0,.2), 0 3px 4px rgba(0,0,0,.14), 0 3px 3px -2px rgba(0,0,0,.12);
   }
   &__tooltips {
     border-radius: 2px;
-    background: #a98eff;
+    background: @defaultColor;
     color: #fff;
     font-size: 13px;
     line-height: 16px;
@@ -295,8 +376,10 @@
     position: absolute;
     top: 0;
     left: @handleSize / 2 - 1;
+    transition: all .3s ease;
     div {
       padding: 2px 4px;
+      word-wrap: none;
     }
     &::after {
       content: '';
@@ -319,18 +402,38 @@
     transform: translateX(-50%) translateY(-50%);
     opacity: .4;
     background: currentColor;
+    border-radius: 1px;
   }
   &.is-dragging {
     .v-slider__track, .v-slider__handle {
       transition: none;
     }
     .v-slider__tooltips {
-      transform: translateX(-50%) translateY(-150%) scale(1.2);
+      transform: translateX(-50%) translateY(-150%) scale(1.15);
     }
   }
-  &.is-disabled {
+  &.is-disable, &.is-readonly {
     cursor: not-allowed;
-    opacity: .6;
+    opacity: .7;
+  }
+  &.is-readonly {
+    opacity: 1;
+  }
+
+  &.is-success {
+    .v-slider__track.is-active, .v-slider__tooltips {
+      background: @successColor;
+    }
+  }
+  &.is-warning {
+    .v-slider__track.is-active, .v-slider__tooltips {
+      background: @warningColor;
+    }
+  }
+  &.is-error {
+    .v-slider__track.is-active, .v-slider__tooltips {
+      background: @errorColor;
+    }
   }
 }
 </style>

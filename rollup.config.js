@@ -13,8 +13,9 @@ export default {
   input: 'src/install.js',
   output: {
     name: 'VuegoSlider',
+    exports: 'named',
     globals: ['Hammer'],
-    format: 'iife',
+    format: 'umd',
     file: 'dist/vuego-slider.js',
     banner: banner,
   },

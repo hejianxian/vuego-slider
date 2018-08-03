@@ -1,7 +1,7 @@
 {
-  "name": "vuego-slider",
+  "name": "@vuego/slider",
   "description": "A Vue.js Slider Component",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "author": "Hejx <531601727@qq.com>",
   "license": "MIT",
   "private": true,
